@@ -1,12 +1,18 @@
 __all__ = ["MLP"]
 
 
+from enum import Enum
+
 import torch.nn as nn
 from jaxtyping import Float
 from torch import Tensor
 
 from nnscaling.models.base import BaseTorchModel
 from nnscaling.models.factory import LinearLayerFactory
+
+
+class NonlinearityLookup(Enum):
+    relu = nn.ReLU
 
 
 class MLP(BaseTorchModel):
@@ -19,7 +25,7 @@ class MLP(BaseTorchModel):
         in_features: int = 2,  # Number of input features to the model.
         config: list = [8],  # Number of neurons per hidden layer.
         out_features: int = 2,  # Number of output features.
-        nonlinearity: nn.Module = nn.ReLU,
+        nonlinearity: nn.Module | str = nn.ReLU,
         bias: bool = True,
     ):
         super().__init__()
@@ -27,6 +33,11 @@ class MLP(BaseTorchModel):
         self.factory = LinearLayerFactory()
         self.in_features = in_features
         self.out_features = out_features
+        nonlinearity = (
+            NonlinearityLookup[nonlinearity].value
+            if isinstance(nonlinearity, str)
+            else nonlinearity
+        )
         self.nonlinearity = nonlinearity
         self.bias = bias
 

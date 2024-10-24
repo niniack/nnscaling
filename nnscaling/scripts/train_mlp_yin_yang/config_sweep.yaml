@@ -1,0 +1,42 @@
+entity: nishantaswani
+project: scaling
+name: train_sweep
+
+method: bayes
+metric:
+  name: train_loss
+  goal: minimize
+
+num_sweeps: 100
+
+parameters:
+  batch_size:
+    values: [500, 1_000]
+  learning_rate:
+    distribution: uniform
+    min: 1e-3
+    max: 1e-2
+  weight_decay:
+    distribution: uniform
+    min: 1e-4
+    max: 1e-2
+  num_epochs: 
+    values: [2_000]
+  seed:
+    values: [0]
+  out_features: 
+    values: [2]
+  hidden_neurons:
+    value: [8,6,4,3]
+  train_data: 
+      parameters:
+        num_samples: 
+          values: [2_000]
+        split: 
+          values: [train]
+        torch_transform:
+          values: [null]
+        seed:
+          values: [42]
+        negative_label:
+          values: [false]

@@ -21,6 +21,8 @@ pydantic = "^2.9.2"
 torcheval = "^0.0.7"
 pyyaml = "^6.0.2"
 tqdm = "^4.66.5"
+wandb = "^0.18.5"
+python-dotenv = "^1.0.1"
 
 
 [[tool.poetry.source]]
@@ -49,3 +51,4 @@ testpaths = [
 
 [tool.ruff.lint]
 ignore = ["F722"]
+unfixable = ["F401"]

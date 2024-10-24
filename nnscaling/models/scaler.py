@@ -45,13 +45,21 @@ class ScaledModel(nn.Module):
             *list(self._model.features.children())[index:]
         )
 
+        # Add a hook to first layer in post_inserts
+        self.activations = None
+        first_layer = next(self.post_inserts.children())
+        self.hook = first_layer.register_forward_hook(self._hook_fn)
+
     def __getattr__(self, name):
         # Prioritise locally defined attributes
         if name in self.__dict__["_modules"]:
             return self.__dict__["_modules"][name]
         # Look in `model` for undefined attributes
-        model = super().__getattr__("model")
+        model = super().__getattr__("_model")
         return getattr(model, name)
+
+    def _hook_fn(self, module, input, output):
+        self.activations = output
 
     def forward_raw(self, x: Float[Tensor, "batch features"]):
         return self._model(x)
@@ -62,4 +70,4 @@ class ScaledModel(nn.Module):
         return self.post_inserts(x)
 
     def summary(self) -> torchinfo.ModelStatistics:
-        return torchinfo.summary(self)
+        return torchinfo.summary(self, row_settings=["var_names", "ascii_only"])

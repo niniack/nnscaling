@@ -4,3 +4,7 @@ logs/
 .venv
 .pytest_cache
 .vscode
+*secret*
+wandb/
+*.sh
+*slurm*
