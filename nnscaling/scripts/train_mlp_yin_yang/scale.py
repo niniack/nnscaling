@@ -162,9 +162,9 @@ def main(config_path_or_obj: Optional[Path | str | Config] = None):
 
     if config.save_dir:
         metadata_dict = {
-            "config": str(config.hidden_neurons),
+            "config": str(metadata["config"]),
             "dataset": dataset.name(),
-            "nonlinearity": "relu",
+            "nonlinearity": str(metadata["nonlinearity"]),
             "added_layers": str(config.num_scaled_layers),
             "layer_start": str(config.scale_location),
         }
