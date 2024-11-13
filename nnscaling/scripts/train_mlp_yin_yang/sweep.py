@@ -4,6 +4,7 @@ import fire
 import wandb
 import yaml
 
+from nnscaling.scripts.train_mlp_yin_yang.scale import main as run_scale
 from nnscaling.scripts.train_mlp_yin_yang.train import main as run_train
 
 
@@ -18,7 +19,15 @@ def main(sweep_config_path: Path):
     )
 
     # Start sweep job.
-    wandb.agent(sweep_id, function=run_train, count=sweep_config["num_sweeps"] or 5)
+    if "scale" in str(sweep_config_path):
+        main_func = run_scale
+    elif "train" in str(sweep_config_path):
+        main_func = run_train
+    else:
+        raise ValueError(
+            "To be fixed! For now, please send a config file with 'scale' or 'train'."
+        )
+    wandb.agent("sn6s2jmn", function=main_func, count=sweep_config["num_sweeps"] or 5)
 
 
 if __name__ == "__main__":

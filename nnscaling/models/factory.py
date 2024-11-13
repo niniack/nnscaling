@@ -42,6 +42,7 @@ class LinearLayerFactory(LayerFactory):
 
     @staticmethod
     def init_weights(module: nn.Module):
-        nn.init.kaiming_normal_(module.linear.weight, nonlinearity="relu")
-        if module.linear.bias is not None:
-            module.linear.bias.data.fill_(0.01)
+        if isinstance(module, nn.Linear):
+            nn.init.kaiming_normal_(module.weight, nonlinearity="relu")
+            if module.bias is not None:
+                module.bias.data.fill_(0.01)

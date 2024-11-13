@@ -16,5 +16,9 @@ class BaseTorchModel(nn.Module, ABC):
     def forward(self):
         pass
 
+    @abstractmethod
+    def load_model(self):
+        pass
+
     def summary(self):
         return torchinfo.summary(self, row_settings=["var_names", "ascii_only"])

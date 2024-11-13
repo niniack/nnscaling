@@ -1,3 +1,4 @@
+import os
 import sys
 from ast import literal_eval
 from pathlib import Path
@@ -62,11 +63,12 @@ def train_one_epoch(
 
         optimizer.zero_grad()
 
+        model.hook_model(post=True)
         with torch.no_grad():
             _ = model.forward_raw(input)
-            output_activation = model.activations
-        _ = model.forward(input)
-        target_activation = model.activations
+            target_activation = model.activations_dict["post_insert_0"]
+        _ = model.forward_scaled(input)
+        output_activation = model.activations_dict["post_insert_0"]
 
         loss = criterion(output_activation, target_activation)
         loss.backward()
@@ -90,6 +92,10 @@ def main(config_path_or_obj: Optional[Path | str | Config] = None):
     wandb_config_dict = dict(wandb.config)
     if wandb_config_dict:
         wandb_config_dict.update({"save_dir": None, "print_freq": 500})
+        wandb_config_dict.update(
+            {"betas": [wandb_config_dict["beta_one"], wandb_config_dict["beta_two"]]}
+        )
+        del wandb_config_dict["beta_one"], wandb_config_dict["beta_two"]
 
     # Load config
     config = load_config(
@@ -120,12 +126,12 @@ def main(config_path_or_obj: Optional[Path | str | Config] = None):
         index=config.scale_location,
         num_scaled=config.num_scaled_layers,
     )
-    # model.summary()
+    model.summary()
     model.to(device).train()
 
     all_param_names = [name for name, _ in model.named_parameters()]
     assert len(all_param_names) > 0, "No trainable parameters found."
-    # logger.info(f"Trainable parameters: {len(all_param_names)}")
+    logger.info(f"Trainable layers: {len(all_param_names)}")
 
     # Define loss and optimiser
     loss = nn.HuberLoss(delta=1)
@@ -156,9 +162,7 @@ def main(config_path_or_obj: Optional[Path | str | Config] = None):
 
         # Print loss
         if (epoch + 1) % config.print_freq == 0:
-            logger.info(
-                f"Epoch {epoch + 1}/{config.num_epochs}, Loss: {train_loss:.4f}"
-            )
+            logger.info(f"Epoch {epoch + 1}/{config.num_epochs}, Loss: {train_loss:.4f}")
 
     if config.save_dir:
         metadata_dict = {
@@ -168,9 +172,13 @@ def main(config_path_or_obj: Optional[Path | str | Config] = None):
             "added_layers": str(config.num_scaled_layers),
             "layer_start": str(config.scale_location),
         }
+        os.makedirs(os.path.dirname(config.save_dir), exist_ok=True)
         save_model(
             model,
-            Path(config.save_dir, "scaled_yinyang_model.safetensors"),
+            Path(
+                config.save_dir,
+                f"loc_{config.scale_location}_scaled_yinyang_model.safetensors",
+            ),
             metadata=metadata_dict,
         )
 

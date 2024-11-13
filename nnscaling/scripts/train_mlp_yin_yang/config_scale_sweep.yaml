@@ -1,0 +1,48 @@
+entity: nishantaswani
+project: scaling
+name: train_sweep
+
+method: grid
+metric:
+  name: train_loss
+  goal: minimize
+
+num_sweeps: 500
+
+parameters:
+  batch_size:
+    value: 1_000
+  learning_rate:
+    values: [1e-4, 5e-4, 1e-3]
+  weight_decay:
+    values: [1e-4, 5e-4, 1e-3]
+  beta_one:
+    values: [7e-1, 7.5e-1, 8e-1, 8.5e-1, 9e-1]
+  beta_two:
+    values: [8e-1, 8.5e-1, 9e-1, 9.5e-1, 9.9e-1]
+  num_epochs: 
+    value: 3_000
+  seed:
+    value: 0
+  out_features: 
+    value: 2
+  model_to_scale: 
+    value: "/home/nsa325/work/nnscaling/model_saves/yinyang_model.safetensors"
+  scale_location:
+    value: 3
+  num_scaled_layers: 
+    distribution: int_uniform
+    min: 5
+    max: 20
+  train_data: 
+      parameters:
+        num_samples: 
+          value: 2_000
+        split: 
+          value: train
+        torch_transform:
+          value: null
+        seed:
+          value: 42
+        negative_label:
+          value: false

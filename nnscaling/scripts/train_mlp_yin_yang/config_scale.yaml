@@ -1,22 +1,22 @@
 seed: 0
 batch_size: 1_000
-num_epochs: 8_000
+num_epochs: 5_000
 
-learning_rate: 2e-3
-weight_decay: 1e-4
+betas: [0.8, 0.85]
+learning_rate: 1e-3
+weight_decay: 1e-3
 out_features: 2
 
 model_to_scale: "/home/nsa325/work/nnscaling/model_saves/yinyang_model.safetensors"
 scale_location: 3
-num_scaled_layers: 10
-betas: [0.8, 0.8]
+num_scaled_layers: 15
 
 train_data: 
-    num_samples: 2_000
+    num_samples: 3_000
     split: "train"
     torch_transform: null
     seed: 42
     negative_label: false
 
-save_dir: "/home/nsa325/work/nnscaling/model_saves/"
+save_dir: "/home/nsa325/work/nnscaling/model_saves/scaling/"
 print_freq: 500

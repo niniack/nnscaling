@@ -24,16 +24,17 @@ class Layer(nn.Module, ABC):
     def kwargs(self) -> dict:
         pass
 
+    @property
+    @abstractmethod
+    def out_features(self) -> dict:
+        pass
+
 
 class LinearLayer(Layer):
-    def __init__(
-        self, in_features: int, out_features: int, nonlinearity: nn.Module, bias: bool
-    ):
+    def __init__(self, in_features: int, out_features: int, nonlinearity: nn.Module, bias: bool):
         super().__init__(nonlinearity, bias)
 
-        self.linear = nn.Linear(
-            in_features=in_features, out_features=out_features, bias=bias
-        )
+        self.linear = nn.Linear(in_features=in_features, out_features=out_features, bias=bias)
         self.activation = nonlinearity() if nonlinearity else None
 
         self._kwargs = OrderedDict(
@@ -48,6 +49,10 @@ class LinearLayer(Layer):
     @property
     def kwargs(self) -> dict:
         return self._kwargs
+
+    @property
+    def out_features(self) -> dict:
+        return self._kwargs["out_features"]
 
     def forward(self, x):
         x = self.linear(x)

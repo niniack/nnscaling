@@ -10,20 +10,30 @@ package-mode = true
 python = "^3.10"
 torch = { version = "2.1.0", source = "pytorch" }
 torchvision = { version = "*", source = "pytorch" }
-numpy = "~1.26"
+numpy = "*"
 ipykernel = "^6.29.5"
 fire = "^0.7.0"
 safetensors = "^0.4.5"
 rich = "^13.9.3"
 torchinfo = "^1.8.0"
 jaxtyping = "^0.2.34"
-pydantic = "^2.9.2"
+pydantic = "*"
 torcheval = "^0.0.7"
 pyyaml = "^6.0.2"
 tqdm = "^4.66.5"
 wandb = "^0.18.5"
 python-dotenv = "^1.0.1"
-
+matrepr = "^1.0.1"
+einops = "^0.8.0"
+pykoopman = {git = "https://github.com/niniack/pykoopman", branch="master"}
+latex = "^0.7.0"
+ruff = "^0.7.1"
+plotly = "^5.24.1"
+nbformat = "^5.10.4"
+ipywidgets = "^8.1.5"
+panel = "^1.5.3"
+jupyter-bokeh = "^4.0.5"
+giotto-tda = "^0.6.2"
 
 [[tool.poetry.source]]
 name = "pytorch"
@@ -35,7 +45,7 @@ pytest-randomly = "^3.15.0"
 pytest = "^8.3.3"  
   
 [tool.poetry.group.dev.dependencies]  
-ruff = "^0.4.10"  
+ruff = "*"  
 ipykernel = "^6.29.5"
 matplotlib="*"
 seaborn="*"
@@ -48,6 +58,15 @@ build-backend = "poetry.core.masonry.api"
 testpaths = [
     "tests",
 ]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+
+[tool.ruff]
+# Enable Jupyter Notebook support
+extend-include = ["*.ipynb"]
+line-length = 100  # Set the maximum line length
+target-version = "py311"  # Specify the Python version you're targeting
 
 [tool.ruff.lint]
 ignore = ["F722"]

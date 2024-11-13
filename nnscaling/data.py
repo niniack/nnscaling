@@ -4,7 +4,8 @@ __all__ = [
     "MNISTDataset",
 ]
 
-from typing import Callable
+import sys
+from typing import Callable, Literal
 
 import numpy as np
 import torch
@@ -16,11 +17,16 @@ from torchvision import datasets, transforms
 
 class DatasetConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, arbitrary_types_allowed=True)
+    dataset_name: Literal["YinYangDataset", "YinYangNoDotsBinaryDataset", "YinYangBinaryDataset"]
     num_samples: int
     split: str
     torch_transform: Callable | None = None
     seed: int | None = 42
     negative_label: bool = False
+
+
+def get_dataset_class(name: str) -> Dataset:
+    return getattr(sys.modules[__name__], name)
 
 
 def create_data_loader(
@@ -214,9 +220,7 @@ class MNISTDataset:
         root="/mnt/datasets/",  # Dataset location
         train=True,  # Train or test dataset
     ):
-        self.data = datasets.MNIST(
-            root=root, train=train, download=True, transform=transform
-        ).data
+        self.data = datasets.MNIST(root=root, train=train, download=True, transform=transform).data
 
     def name(self):
         return "MNISTDataset"

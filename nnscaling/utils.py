@@ -4,6 +4,7 @@ import random
 
 import numpy as np
 import torch
+from jaxtyping import Int
 from torch import device
 from torch.utils.data import DataLoader, Dataset
 from torcheval.metrics import MulticlassAccuracy
@@ -34,12 +35,13 @@ def set_seed(seed: int | None) -> None:
 def compute_model_accuracy(
     model: BaseTorchModel,  # Model
     dataset: Dataset,  # Dataset
+    batch_size: Int = 256,
 ):
-    dataloader = DataLoader(dataset, batch_size=256)
+    dataloader = DataLoader(dataset, batch_size=batch_size)
     metric = MulticlassAccuracy()
-    for batch in dataloader:
+    for i, batch in enumerate(dataloader):
         image, target = batch
-        output = model(image)
+        output = model.forward(image)
         metric.update(output, target.squeeze())
 
     return metric.compute()
@@ -59,9 +61,7 @@ def safetensors_metadata_parser(
                 headers = f.read(header_len)
                 if len(headers) == header_len:
                     meta_data = sorted(
-                        json.loads(headers.decode("utf-8"))
-                        .get("__metadata__", meta_data)
-                        .items()
+                        json.loads(headers.decode("utf-8")).get("__metadata__", meta_data).items()
                     )
     meta_data_dict = {}
     for k, v in meta_data:

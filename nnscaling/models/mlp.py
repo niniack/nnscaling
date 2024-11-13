@@ -1,14 +1,18 @@
 __all__ = ["MLP"]
 
 
+from ast import literal_eval
 from enum import Enum
+from pathlib import Path
 
 import torch.nn as nn
 from jaxtyping import Float
+from safetensors.torch import load_model
 from torch import Tensor
 
 from nnscaling.models.base import BaseTorchModel
 from nnscaling.models.factory import LinearLayerFactory
+from nnscaling.utils import get_device, safetensors_metadata_parser
 
 
 class NonlinearityLookup(Enum):
@@ -51,7 +55,7 @@ class MLP(BaseTorchModel):
                 nonlinearity=nonlinearity if not i == len(full_config) - 2 else None,
                 bias=bias,
             )
-            self.factory.init_weights(layers[i])
+            layers[i].apply(self.factory.init_weights)
         self._features = nn.Sequential(*layers)
 
     @property
@@ -63,3 +67,22 @@ class MLP(BaseTorchModel):
         x: Float[Tensor, "batch features"],
     ):
         return self.features(x)
+
+    @classmethod
+    def load_model(cls, file_path: str | Path):
+        assert Path(file_path).exists(), f"Model file {file_path} does not exist."
+
+        # Parse metadata
+        metadata = safetensors_metadata_parser(file_path=file_path)
+        print(metadata)
+
+        # Load base model
+        model = cls(
+            config=literal_eval(metadata["config"]),
+            nonlinearity=nn.ReLU if metadata["nonlinearity"] == "relu" else ValueError(),
+        )
+
+        # Load weights
+        load_model(model, file_path, device=get_device())
+
+        return model

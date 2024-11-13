@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -28,15 +29,15 @@ from nnscaling.utils import get_device, set_seed
 class Config(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     seed: NonNegativeInt = 0
-    train_data: DatasetConfig
+    num_epochs: PositiveInt | None = None
     batch_size: PositiveInt
     learning_rate: PositiveFloat
     weight_decay: PositiveFloat
     out_features: PositiveInt
-    print_freq: PositiveInt
-    save_dir: str | None
     hidden_neurons: list[PositiveInt]
-    num_epochs: PositiveInt | None = None
+    train_data: DatasetConfig
+    save_dir: str | None
+    print_freq: PositiveInt
 
 
 def main(config_path_or_obj: Optional[Path | str | Config] = None):
@@ -105,16 +106,16 @@ def main(config_path_or_obj: Optional[Path | str | Config] = None):
 
         # Print loss
         if (epoch + 1) % config.print_freq == 0:
-            logger.info(
-                f"Epoch {epoch + 1}/{config.num_epochs}, Loss: {train_loss:.4f}"
-            )
+            logger.info(f"Epoch {epoch + 1}/{config.num_epochs}, Loss: {train_loss:.4f}")
 
     if config.save_dir:
         metadata_dict = {
             "config": str(config.hidden_neurons),
             "dataset": dataset.name(),
+            "out_features": str(config.out_features),
             "nonlinearity": "relu",
         }
+        os.makedirs(os.path.dirname(config.save_dir), exist_ok=True)
         save_model(
             model,
             Path(config.save_dir, "yinyang_model.safetensors"),
