@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Optional
 
 import fire
+import torch
 import wandb
 from pydantic import (
     BaseModel,
@@ -14,15 +15,16 @@ from pydantic import (
 )
 from safetensors.torch import save_model
 from torch import nn, optim
+from torch.utils.data import DataLoader
 
 from nnscaling.data import (
     DatasetConfig,
-    YinYangNoDotsBinaryDataset,
     create_data_loader,
+    get_dataset_class,
 )
 from nnscaling.log import logger
-from nnscaling.models import MLP
-from nnscaling.scripts.common import load_config, train_one_epoch
+from nnscaling.models import MLP, BaseTorchModel
+from nnscaling.scripts.common import load_config
 from nnscaling.utils import get_device, set_seed
 
 
@@ -37,7 +39,35 @@ class Config(BaseModel):
     hidden_neurons: list[PositiveInt]
     train_data: DatasetConfig
     save_dir: str | None
+    save_name: str | None
     print_freq: PositiveInt
+
+
+def train_one_epoch(
+    model: BaseTorchModel,
+    train_loader: DataLoader,
+    device: torch.device,
+    criterion: torch.nn,
+    optimizer: torch.nn,
+) -> None:
+    model.train()
+    loss_epoch = 0
+
+    for batch_idx, (input, label) in enumerate(train_loader):
+        input, label = input.to(device), label.to(device)
+        label = label.squeeze()
+
+        optimizer.zero_grad()
+        output = model(input)
+
+        loss = criterion(output, label.long())
+        loss.backward()
+        optimizer.step()
+
+        loss_epoch += loss.item()  # Accumulate loss
+
+    epoch_loss = loss_epoch / len(train_loader)  # Average loss over all batches
+    return epoch_loss
 
 
 def main(config_path_or_obj: Optional[Path | str | Config] = None):
@@ -63,7 +93,8 @@ def main(config_path_or_obj: Optional[Path | str | Config] = None):
     set_seed(config.seed)
 
     dataset_config = config.train_data
-    dataset = YinYangNoDotsBinaryDataset(config=dataset_config)
+    DatasetClass = get_dataset_class(name=dataset_config.dataset_name)
+    dataset = DatasetClass(config=dataset_config)
     train_loader = create_data_loader(
         dataset, batch_size=config.batch_size, global_seed=config.seed
     )
@@ -74,8 +105,7 @@ def main(config_path_or_obj: Optional[Path | str | Config] = None):
         out_features=config.out_features,
         nonlinearity=nn.ReLU,
     )
-    model.to(device)
-    model.train()
+    model.to(device).train()
 
     all_param_names = [name for name, _ in model.named_parameters()]
     assert len(all_param_names) > 0, "No trainable parameters found."
@@ -118,7 +148,7 @@ def main(config_path_or_obj: Optional[Path | str | Config] = None):
         os.makedirs(os.path.dirname(config.save_dir), exist_ok=True)
         save_model(
             model,
-            Path(config.save_dir, "yinyang_model.safetensors"),
+            Path(config.save_dir, f"{config.save_name}.safetensors"),
             metadata=metadata_dict,
         )
 

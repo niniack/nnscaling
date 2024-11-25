@@ -34,6 +34,9 @@ ipywidgets = "^8.1.5"
 panel = "^1.5.3"
 jupyter-bokeh = "^4.0.5"
 giotto-tda = "^0.6.2"
+giotto-ph = "^0.2.4"
+ripser = "^0.6.10"
+scikit-dimension = "^0.3.4"
 
 [[tool.poetry.source]]
 name = "pytorch"

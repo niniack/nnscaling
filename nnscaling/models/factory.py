@@ -18,6 +18,10 @@ class LayerFactory(ABC):
         pass
 
     @abstractmethod
+    def hook_layer(cls, layer: Layer) -> Layer:
+        pass
+
+    @abstractmethod
     def init_weights(module: nn.Module):
         pass
 
@@ -25,20 +29,30 @@ class LayerFactory(ABC):
 class LinearLayerFactory(LayerFactory):
     @classmethod
     def create_layer(
-        cls, bias: bool, in_features: int, out_features: int, nonlinearity: nn.Module
+        cls,
+        bias: bool,
+        in_features: int,
+        out_features: int,
+        nonlinearity: nn.Module,
+        hook: bool,
     ) -> LinearLayer:
         return LinearLayer(
             in_features=in_features,
             out_features=out_features,
             nonlinearity=nonlinearity,
             bias=bias,
+            hook=hook,
         )
 
     @classmethod
     def scale_layer(cls, layer: LinearLayer) -> LinearLayer:
         kwargs = deepcopy(layer.kwargs)
         kwargs["out_features"] = kwargs["in_features"]
-        return cls.create_layer(**kwargs)
+        return cls.create_layer(**kwargs, hook=False)
+
+    @classmethod
+    def hook_layer(cls, layer: Layer) -> Layer:
+        return layer.setup_hook()
 
     @staticmethod
     def init_weights(module: nn.Module):

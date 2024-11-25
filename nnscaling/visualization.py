@@ -135,9 +135,8 @@ def plot_decision_boundary(
     fig, ax = plt.subplots()
     aesthetics.set_equal_aspect(ax)
 
-    # Get Seaborn's tab colors
-    orange = aesthetics.SeabornColors.orange
-    blue = aesthetics.SeabornColors.blue
+    # Generate a color palette with as many colors as there are labels
+    colors = sns.color_palette("tab10", len(labels))
 
     # Initialization
     x_min, x_max = X[:, 0].min() - 0.1, X[:, 0].max() + 0.1
@@ -147,22 +146,16 @@ def plot_decision_boundary(
     x_in = torch.tensor(x_in, dtype=torch.float32).to(next(model.parameters()).device)
 
     # Plot data points
-    sns.scatterplot(
-        x=X[y == labels[0], 0].cpu().numpy(),
-        y=X[y == labels[0], 1].cpu().numpy(),
-        ax=ax,
-        color=orange,
-        marker="o",
-        s=50,
-    )
-    sns.scatterplot(
-        x=X[y == labels[1], 0].cpu().numpy(),
-        y=X[y == labels[1], 1].cpu().numpy(),
-        ax=ax,
-        color=blue,
-        marker="o",
-        s=50,
-    )
+    for label, color in zip(labels, colors):
+        sns.scatterplot(
+            x=X[y == label, 0].cpu().numpy(),
+            y=X[y == label, 1].cpu().numpy(),
+            ax=ax,
+            color=color,
+            marker="o",
+            s=50,
+            label=f"Class {label}",
+        )
 
     # Load final model state and set to eval mode
     model.load_state_dict(final_state_dict)
@@ -178,9 +171,9 @@ def plot_decision_boundary(
         xx,
         yy,
         y_pred,
-        colors=[orange, blue],
+        levels=np.arange(len(labels) + 1) - 0.5,  # Adjust levels for proper class separation
+        colors=colors,
         alpha=0.5,
-        levels=np.linspace(labels[0], labels[1], 3),
     )
 
     ax.set_xlim(x_min, x_max)

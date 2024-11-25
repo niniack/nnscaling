@@ -2,11 +2,12 @@ __all__ = ["MLP"]
 
 
 from ast import literal_eval
+from collections import OrderedDict
 from enum import Enum
 from pathlib import Path
 
 import torch.nn as nn
-from jaxtyping import Float
+from jaxtyping import Float, Int
 from safetensors.torch import load_model
 from torch import Tensor
 
@@ -44,7 +45,7 @@ class MLP(BaseTorchModel):
         )
         self.nonlinearity = nonlinearity
         self.bias = bias
-
+        self.handles = []
         full_config = [in_features, *config, out_features]
 
         layers = [None] * (len(full_config) - 1)
@@ -54,6 +55,7 @@ class MLP(BaseTorchModel):
                 out_features=full_config[i + 1],
                 nonlinearity=nonlinearity if not i == len(full_config) - 2 else None,
                 bias=bias,
+                hook=False,
             )
             layers[i].apply(self.factory.init_weights)
         self._features = nn.Sequential(*layers)
@@ -62,6 +64,26 @@ class MLP(BaseTorchModel):
     def features(self) -> nn.Sequential:
         return self._features
 
+    def hook_model(self):
+        # Remove all previous hooks
+        for handle in self.handles:
+            handle.remove()
+        self.handles.clear()
+
+        for layer in self.features:
+            # if not layer.is_hooked:
+            self.handles.append(self.factory.hook_layer(layer))
+
+    def get_activations(self, detach=True) -> OrderedDict:
+        activations = OrderedDict()
+        for i, layer in enumerate(self.features):
+            if layer.is_hooked:
+                activations[i] = (
+                    layer.forward_activations if not detach else layer.forward_activations.detach()
+                )
+
+        return activations
+
     def forward(
         self,
         x: Float[Tensor, "batch features"],
@@ -69,7 +91,7 @@ class MLP(BaseTorchModel):
         return self.features(x)
 
     @classmethod
-    def load_model(cls, file_path: str | Path):
+    def load_model(cls, file_path: str | Path, in_features: Int):
         assert Path(file_path).exists(), f"Model file {file_path} does not exist."
 
         # Parse metadata
@@ -79,6 +101,8 @@ class MLP(BaseTorchModel):
         # Load base model
         model = cls(
             config=literal_eval(metadata["config"]),
+            in_features=in_features,
+            out_features=literal_eval(metadata["out_features"]),
             nonlinearity=nn.ReLU if metadata["nonlinearity"] == "relu" else ValueError(),
         )
 

@@ -21,8 +21,8 @@ from torch.utils.data import DataLoader
 
 from nnscaling.data import (
     DatasetConfig,
-    YinYangNoDotsBinaryDataset,
     create_data_loader,
+    get_dataset_class,
 )
 from nnscaling.log import logger
 from nnscaling.models import MLP, BaseTorchModel, ScaledModel
@@ -39,6 +39,7 @@ class Config(BaseModel):
     weight_decay: PositiveFloat
     out_features: PositiveInt
     print_freq: PositiveInt
+    save_name: str | None
     save_dir: str | None
     model_to_scale: str
     scale_location: PositiveInt
@@ -47,30 +48,84 @@ class Config(BaseModel):
     num_epochs: PositiveInt | None = None
 
 
+# def train_one_epoch(
+#     model: nn.Module,
+#     train_loader: DataLoader,
+#     device: torch.device,
+#     optimizer: torch.optim.Optimizer,
+#     lambda_reg: float = 100.0,
+# ) -> float:
+#     model.train()
+#     model.to(device)
+#     loss_epoch = 0
+#     criterion = nn.CrossEntropyLoss()
+
+#     replaceable_params = list(model.replaceable.parameters())
+
+#     for batch_idx, (input, label) in enumerate(train_loader):
+#         input, label = input.to(device), label.to(device)
+#         label = label.squeeze()
+
+#         optimizer.zero_grad()
+#         output = model.forward_scaled(input)
+
+#         loss = criterion(output, label.long())
+
+#         # Compute the L2 norms
+#         trainable_params = [p for p in model.parameters() if p.requires_grad]
+#         total_l2 = torch.norm(torch.cat([p.flatten() for p in trainable_params]))
+#         replaceable_l2 = torch.norm(torch.cat([p.flatten() for p in replaceable_params]))
+
+#         # Add the L2 regularization loss component
+#         reg_loss = (total_l2 - replaceable_l2).pow(2)
+#         loss += lambda_reg * reg_loss
+
+#         loss.backward()
+#         optimizer.step()
+
+#         loss_epoch += loss.item()  # Accumulate loss
+
+#     epoch_loss = loss_epoch / len(train_loader)  # Average loss over all batches
+#     return epoch_loss
+
+
 def train_one_epoch(
-    model: BaseTorchModel,
+    model: nn.Module,
     train_loader: DataLoader,
     device: torch.device,
-    criterion: torch.nn,
-    optimizer: torch.nn,
+    optimizer: torch.optim.Optimizer,
+    lambda_reg: float = 10.0,
 ) -> None:
     model.train()
+    model.to(device)
     loss_epoch = 0
+    criterion = nn.HuberLoss()
+
+    replaceable_params = list(model.replaceable.parameters())
 
     for batch_idx, (input, label) in enumerate(train_loader):
         input, label = input.to(device), label.to(device)
         label = label.squeeze()
 
         optimizer.zero_grad()
-
         model.hook_model(post=True)
         with torch.no_grad():
             _ = model.forward_raw(input)
-            target_activation = model.activations_dict["post_insert_0"]
+            target_activation = model.get_activations()["post_insert_0"]
         _ = model.forward_scaled(input)
-        output_activation = model.activations_dict["post_insert_0"]
+        output_activation = model.get_activations(detach=False)["post_insert_0"]
 
         loss = criterion(output_activation, target_activation)
+
+        # Compute the L2 norms
+        trainable_params = [p for p in model.parameters() if p.requires_grad]
+        total_l2 = torch.norm(torch.cat([p.flatten() for p in trainable_params]))
+        replaceable_l2 = torch.norm(torch.cat([p.flatten() for p in replaceable_params]))
+
+        # Add the L2 regularization loss component
+        reg_loss = (total_l2 - replaceable_l2).pow(2)
+        loss += lambda_reg * reg_loss
+
         loss.backward()
         optimizer.step()
 
@@ -110,17 +165,15 @@ def main(config_path_or_obj: Optional[Path | str | Config] = None):
 
     # Load data
     dataset_config = config.train_data
-    dataset = YinYangNoDotsBinaryDataset(config=dataset_config)
+    DatasetClass = get_dataset_class(name=dataset_config.dataset_name)
+    dataset = DatasetClass(config=dataset_config)
     train_loader = create_data_loader(
         dataset, batch_size=config.batch_size, global_seed=config.seed
     )
 
     # Load model
     metadata = safetensors_metadata_parser(file_path=config.model_to_scale)
-    unscaled_model = MLP(
-        config=literal_eval(metadata["config"]), nonlinearity=metadata["nonlinearity"]
-    )
-    _ = load_model(unscaled_model, config.model_to_scale, device=device)
+    unscaled_model = MLP.load_model(config.model_to_scale, dataset.features.shape[-1])
     model = ScaledModel(
         model=unscaled_model,
         index=config.scale_location,
@@ -133,8 +186,7 @@ def main(config_path_or_obj: Optional[Path | str | Config] = None):
     assert len(all_param_names) > 0, "No trainable parameters found."
     logger.info(f"Trainable layers: {len(all_param_names)}")
 
-    # Define loss and optimiser
-    loss = nn.HuberLoss(delta=1)
+    # Define optimiser
     optimizer = optim.AdamW(
         params=model.parameters(),
         lr=config.learning_rate,
@@ -152,7 +204,6 @@ def main(config_path_or_obj: Optional[Path | str | Config] = None):
             model=model,
             train_loader=train_loader,
             device=device,
-            criterion=loss,
             optimizer=optimizer,
         )
 
@@ -168,6 +219,7 @@ def main(config_path_or_obj: Optional[Path | str | Config] = None):
         metadata_dict = {
             "config": str(metadata["config"]),
             "dataset": dataset.name(),
+            "out_features": str(config.out_features),
             "nonlinearity": str(metadata["nonlinearity"]),
             "added_layers": str(config.num_scaled_layers),
             "layer_start": str(config.scale_location),
@@ -177,7 +229,7 @@ def main(config_path_or_obj: Optional[Path | str | Config] = None):
             model,
             Path(
                 config.save_dir,
-                f"loc_{config.scale_location}_scaled_yinyang_model.safetensors",
+                f"loc_{config.scale_location}_scaled_{config.save_name}.safetensors",
             ),
             metadata=metadata_dict,
         )

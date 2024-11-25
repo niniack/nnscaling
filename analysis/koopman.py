@@ -80,7 +80,7 @@ class KoopmanWrapper(nn.Module):
         _ = self._scaled_model.forward_scaled(x)
 
         # Grab activations and rearrange
-        scaled_model_activations = self._scaled_model.activations_dict.copy()
+        scaled_model_activations = self._scaled_model.get_activations().copy()
         scaler_acts = torch.stack(list(scaled_model_activations.values())).detach()
         scaler_acts = einops.rearrange(
             scaler_acts, "iteration batch state -> batch state iteration"

@@ -17,7 +17,14 @@ from torchvision import datasets, transforms
 
 class DatasetConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, arbitrary_types_allowed=True)
-    dataset_name: Literal["YinYangDataset", "YinYangNoDotsBinaryDataset", "YinYangBinaryDataset"]
+    dataset_name: Literal[
+        "YinYangDataset",
+        "YinYangNoDotsBinaryDataset",
+        "YinYangBinaryDataset",
+        "LotusRootDataset",
+        "SunflowerDataset",
+        "TorusDataset",
+    ]
     num_samples: int
     split: str
     torch_transform: Callable | None = None
@@ -26,6 +33,8 @@ class DatasetConfig(BaseModel):
 
 
 def get_dataset_class(name: str) -> Dataset:
+    if name == "SunflowerDataset":
+        name = "LotusRootDataset"
     return getattr(sys.modules[__name__], name)
 
 
@@ -201,6 +210,140 @@ class YinYangBinaryDataset(BaseYinYangDataset):
 
     def name(self):
         return "YinYangBinaryDataset"
+
+
+class LotusRootDataset(Dataset):
+    def __init__(
+        self,
+        config: DatasetConfig,
+        r_inner=0.35,
+        r_outer=1,
+        num_small_circles=9,
+    ):
+        super().__init__()
+        self.num_samples = config.num_samples
+        self.r_inner = r_inner  # Radius of the central circle
+        self.r_outer = r_outer  # Radius of the overall circle
+        self.num_small_circles = num_small_circles  # Number of small circles around the center
+        self.rng = np.random.RandomState(config.seed)
+        self.features = []
+        self.labels = []
+
+        for _ in range(config.num_samples):
+            x, y, label = self.sample_point()
+            self.features.append([x, y])
+            self.labels.append(label)
+
+        self.features = torch.FloatTensor(np.asarray(self.features))
+        self.labels = torch.IntTensor(self.labels).unsqueeze(1)
+
+    def sample_point(self):
+        found_sample = False
+        while not found_sample:
+            # Generate random points within the bounding circle
+            x, y = self.rng.uniform(-self.r_outer, self.r_outer, 2)
+            if np.sqrt(x**2 + y**2) > self.r_outer:
+                continue
+
+            label = self.classify_point(x, y)
+            if label is not None:
+                found_sample = True
+
+        return x, y, label
+
+    def classify_point(self, x, y):
+        # Check if point is inside the central circle
+        distance = np.sqrt(x**2 + y**2)
+        if distance < self.r_inner / 2:
+            return 1  # Class 0: Central Circle
+
+        # Check if point is inside any of the smaller surrounding circles
+        angle_step = 2 * np.pi / (self.num_small_circles - 1)
+        for i in range(self.num_small_circles - 1):
+            angle = i * angle_step
+            cx = (2 / 3) * self.r_outer * np.cos(angle)  # Center x of the small circle
+            cy = (2 / 3) * self.r_outer * np.sin(angle)  # Center y of the small circle
+            if np.sqrt((x - cx) ** 2 + (y - cy) ** 2) < self.r_inner / 2:
+                return 1  # Class 1: Surrounding Small Circle
+
+        return 0  # Reject point if it doesn't fit any class
+
+    def __len__(self):
+        return self.num_samples
+
+    def __getitem__(self, idx):
+        return self.features[idx], self.labels[idx]
+
+    def name(self):
+        return "LotusRootDataset"
+
+
+class TorusDataset(Dataset):
+    def __init__(self, config, R=1.0, r=0.3, num_pairs=2):
+        super().__init__()
+        self.num_samples = config.num_samples
+        self.R = R  # Major radius (distance from the center of the tube to the center of the torus)
+        self.r = r  # Minor radius (radius of the tube)
+        self.num_pairs = num_pairs  # Number of interlocking ring pairs
+        self.rng = np.random.RandomState(config.seed)
+        self.features = []
+        self.labels = []
+
+        # Split samples evenly among all toruses
+        num_samples_per_torus = self.num_samples // (2 * self.num_pairs)
+
+        for pair in range(self.num_pairs):
+            # Offset for the current pair in space to keep toruses distinct and interlocked
+            offset_x = 4 * self.R * pair  # Offset in the x-direction
+            interlock_offset = self.R  # Offset in the z-direction for interlocking
+
+            # Generate points for the first torus in the XY-plane
+            for _ in range(num_samples_per_torus):
+                x, y, z = self.sample_point_xy_plane()
+                self.features.append([x + offset_x, y, z])  # Apply the x-offset
+                self.labels.append(0)  # Label for the first torus in this pair
+
+            # Generate points for the second torus in the XZ-plane, with a z-offset for interlocking
+            for _ in range(num_samples_per_torus):
+                x, y, z = self.sample_point_xz_plane()
+                self.features.append(
+                    [x + offset_x + interlock_offset, y, z]
+                )  # Apply x and z offsets
+                self.labels.append(1)  # Label for the second torus in this pair
+
+        self.features = torch.FloatTensor(np.asarray(self.features))
+        self.labels = torch.IntTensor(self.labels).unsqueeze(1)
+
+    def sample_point_xy_plane(self):
+        # Generate a point on a torus lying in the XY-plane
+        theta = self.rng.uniform(0, 2 * np.pi)
+        phi = self.rng.uniform(0, 2 * np.pi)
+
+        x = (self.R + self.r * np.cos(phi)) * np.cos(theta)
+        y = (self.R + self.r * np.cos(phi)) * np.sin(theta)
+        z = self.r * np.sin(phi)
+
+        return x, y, z
+
+    def sample_point_xz_plane(self):
+        # Generate a point on a torus lying in the XZ-plane
+        theta = self.rng.uniform(0, 2 * np.pi)
+        phi = self.rng.uniform(0, 2 * np.pi)
+
+        x = (self.R + self.r * np.cos(phi)) * np.cos(theta)
+        y = self.r * np.sin(phi)  # y-coordinate varies based on minor radius
+        z = (self.R + self.r * np.cos(phi)) * np.sin(theta)
+
+        return x, y, z
+
+    def __len__(self):
+        return self.num_samples
+
+    def __getitem__(self, idx):
+        return self.features[idx], self.labels[idx]
+
+    def name(self):
+        return "TorusDataset"
 
 
 class MNISTDataset:

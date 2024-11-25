@@ -31,12 +31,12 @@ class TrajectoryEngine:
         # Hook and forward pass on original model
         self.scaled_model.hook_model(pre=True, scaled=False, post=True)
         _ = self.scaled_model.forward_raw(self.dataset.features)
-        raw_model_activations = self.scaled_model.activations_dict.copy()
+        raw_model_activations = self.scaled_model.get_activations().copy()
 
         # Hook and forward pass on scaled model
         self.scaled_model.hook_model(pre=True, scaled=True, post=True)
         _ = self.scaled_model.forward_scaled(self.dataset.features)
-        scaled_model_activations = self.scaled_model.activations_dict.copy()
+        scaled_model_activations = self.scaled_model.get_activations().copy()
 
         return raw_model_activations, scaled_model_activations
 
