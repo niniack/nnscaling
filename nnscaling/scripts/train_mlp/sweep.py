@@ -4,8 +4,13 @@ import fire
 import wandb
 import yaml
 
-from nnscaling.scripts.train_mlp_yin_yang.scale import main as run_scale
-from nnscaling.scripts.train_mlp_yin_yang.train import main as run_train
+# from nnscaling.scripts.train_mlp.scale_spectral import main as run_scale
+# from nnscaling.scripts.train_mlp.scale_norm import main as run_scale
+from nnscaling.scripts.train_mlp.scale import main as run_scale
+
+# from nnscaling.scripts.train_mlp.scale_smooth import main as run_scale
+# from nnscaling.scripts.train_mlp.scale_neuralrep import main as run_scale
+from nnscaling.scripts.train_mlp.train import main as run_train
 
 
 def main(sweep_config_path: Path):
@@ -24,10 +29,8 @@ def main(sweep_config_path: Path):
     elif "train" in str(sweep_config_path):
         main_func = run_train
     else:
-        raise ValueError(
-            "To be fixed! For now, please send a config file with 'scale' or 'train'."
-        )
-    wandb.agent("sn6s2jmn", function=main_func, count=sweep_config["num_sweeps"] or 5)
+        raise ValueError("To be fixed! For now, please send a config file with 'scale' or 'train'.")
+    wandb.agent(sweep_id, function=main_func, count=sweep_config["num_sweeps"] or 5)
 
 
 if __name__ == "__main__":

@@ -13,11 +13,7 @@ from torch import Tensor
 
 from nnscaling.models.base import BaseTorchModel
 from nnscaling.models.factory import LinearLayerFactory
-from nnscaling.utils import get_device, safetensors_metadata_parser
-
-
-class NonlinearityLookup(Enum):
-    relu = nn.ReLU
+from nnscaling.utils import StringtoClassNonlinearity, get_device, safetensors_metadata_parser
 
 
 class MLP(BaseTorchModel):
@@ -27,10 +23,10 @@ class MLP(BaseTorchModel):
 
     def __init__(
         self,
+        nonlinearity: nn.Module | str,
         in_features: int = 2,  # Number of input features to the model.
         config: list = [8],  # Number of neurons per hidden layer.
         out_features: int = 2,  # Number of output features.
-        nonlinearity: nn.Module | str = nn.ReLU,
         bias: bool = True,
     ):
         super().__init__()
@@ -39,10 +35,11 @@ class MLP(BaseTorchModel):
         self.in_features = in_features
         self.out_features = out_features
         nonlinearity = (
-            NonlinearityLookup[nonlinearity].value
+            StringtoClassNonlinearity[nonlinearity].value
             if isinstance(nonlinearity, str)
             else nonlinearity
         )
+
         self.nonlinearity = nonlinearity
         self.bias = bias
         self.handles = []
@@ -96,14 +93,13 @@ class MLP(BaseTorchModel):
 
         # Parse metadata
         metadata = safetensors_metadata_parser(file_path=file_path)
-        print(metadata)
 
         # Load base model
         model = cls(
             config=literal_eval(metadata["config"]),
             in_features=in_features,
             out_features=literal_eval(metadata["out_features"]),
-            nonlinearity=nn.ReLU if metadata["nonlinearity"] == "relu" else ValueError(),
+            nonlinearity=metadata["nonlinearity"],
         )
 
         # Load weights

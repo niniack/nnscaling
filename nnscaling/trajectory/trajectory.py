@@ -9,10 +9,7 @@ from jaxtyping import Int
 from safetensors.torch import save_file
 from torch import Tensor, nn
 
-from nnscaling.data import (
-    DatasetConfig,
-    get_dataset_class,
-)
+from nnscaling.data import DatasetConfig, create_data_loader, get_dataset_class
 
 
 class TrajectoryEngine:
@@ -24,19 +21,28 @@ class TrajectoryEngine:
         self.dataset_config = dataset_config
         DatasetClass = get_dataset_class(name=dataset_config.dataset_name)
         self.dataset = DatasetClass(config=dataset_config)
+        # TODO: Using a data loader is best practice, but this introduces some complexity
+        # in `_run_forward` because we have to do batched inference. Currently, this is solved by
+        # making batch_size huge, which is poor practice
+        self.train_loader = create_data_loader(self.dataset, batch_size=10_000, global_seed=42)
         self.scaled_model = scaled_model
 
     @torch.no_grad()
     def _run_forward(self):
-        # Hook and forward pass on original model
-        self.scaled_model.hook_model(pre=True, scaled=False, post=True)
-        _ = self.scaled_model.forward_raw(self.dataset.features)
-        raw_model_activations = self.scaled_model.get_activations().copy()
+        for batch in self.train_loader:
+            # Assuming the batch contains inputs and targets, e.g., (inputs, targets)
+            # Modify as needed if your dataset has a different structure
+            inputs = batch[0]  # Extract inputs from the batch
 
-        # Hook and forward pass on scaled model
-        self.scaled_model.hook_model(pre=True, scaled=True, post=True)
-        _ = self.scaled_model.forward_scaled(self.dataset.features)
-        scaled_model_activations = self.scaled_model.get_activations().copy()
+            # Hook and forward pass on original model
+            self.scaled_model.hook_model(pre=True, scaled=False, post=True)
+            _ = self.scaled_model.forward_raw(inputs.flatten(start_dim=1))
+            raw_model_activations = self.scaled_model.get_activations().copy()
+
+            # Hook and forward pass on scaled model
+            self.scaled_model.hook_model(pre=True, scaled=True, post=True)
+            _ = self.scaled_model.forward_scaled(inputs.flatten(start_dim=1))
+            scaled_model_activations = self.scaled_model.get_activations().copy()
 
         return raw_model_activations, scaled_model_activations
 
@@ -50,7 +56,7 @@ class TrajectoryEngine:
 
         for i, v in enumerate(values):
             if v.shape[-1] != dim:
-                temp = torch.full((v.shape[0], dim), magic_number)
+                temp = torch.full((v.shape[0], dim), magic_number, dtype=v.dtype, device=v.device)
                 temp[:, : v.shape[-1]] = v
                 values[i] = temp
 
@@ -85,7 +91,9 @@ class TrajectoryEngine:
 
         # Randomly pick indices for train and test dataset
         train_indices = np.random.choice(
-            self.dataset.features.shape[0], size=num_train, replace=False
+            dataset_size,
+            size=num_train,
+            replace=False,
         )
         test_indices = np.random.choice(
             np.setdiff1d(np.arange(dataset_size), train_indices),

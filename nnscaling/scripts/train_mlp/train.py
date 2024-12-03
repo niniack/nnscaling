@@ -1,4 +1,5 @@
 import os
+import pdb
 import sys
 from pathlib import Path
 from typing import Optional
@@ -9,6 +10,7 @@ import wandb
 from pydantic import (
     BaseModel,
     ConfigDict,
+    NonNegativeFloat,
     NonNegativeInt,
     PositiveFloat,
     PositiveInt,
@@ -31,16 +33,16 @@ from nnscaling.utils import get_device, set_seed
 class Config(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     seed: NonNegativeInt = 0
-    num_epochs: PositiveInt | None = None
+    train_data: DatasetConfig
     batch_size: PositiveInt
     learning_rate: PositiveFloat
-    weight_decay: PositiveFloat
+    weight_decay: NonNegativeFloat
     out_features: PositiveInt
+    print_freq: PositiveInt
     hidden_neurons: list[PositiveInt]
-    train_data: DatasetConfig
     save_dir: str | None
     save_name: str | None
-    print_freq: PositiveInt
+    num_epochs: PositiveInt | None = None
 
 
 def train_one_epoch(
@@ -58,7 +60,8 @@ def train_one_epoch(
         label = label.squeeze()
 
         optimizer.zero_grad()
-        output = model(input)
+        # TODO: bad practice
+        output = model(input.flatten(start_dim=1))
 
         loss = criterion(output, label.long())
         loss.backward()
@@ -101,7 +104,7 @@ def main(config_path_or_obj: Optional[Path | str | Config] = None):
 
     model = MLP(
         config=config.hidden_neurons,
-        in_features=dataset.features.shape[-1],
+        in_features=dataset.in_features,
         out_features=config.out_features,
         nonlinearity=nn.ReLU,
     )

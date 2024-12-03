@@ -1,0 +1,20 @@
+seed: 0
+batch_size: 4_096
+num_epochs: 30
+
+learning_rate: 1e-2
+weight_decay: 1e-1
+out_features: 10
+hidden_neurons: [256, 128, 64, 32]
+
+train_data: 
+    dataset_name: "MNISTDataset"
+    num_samples: 1
+    split: "train"
+    torch_transform: null
+    seed: 42
+    negative_label: False
+
+save_name: "mnist_model"
+save_dir: "/home/nsa325/work/nnscaling/model_saves/"
+print_freq: 1

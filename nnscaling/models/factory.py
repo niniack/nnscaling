@@ -35,6 +35,7 @@ class LinearLayerFactory(LayerFactory):
         out_features: int,
         nonlinearity: nn.Module,
         hook: bool,
+        batchnorm: bool = False,
     ) -> LinearLayer:
         return LinearLayer(
             in_features=in_features,
@@ -42,13 +43,25 @@ class LinearLayerFactory(LayerFactory):
             nonlinearity=nonlinearity,
             bias=bias,
             hook=hook,
+            batchnorm=batchnorm,
         )
 
     @classmethod
-    def scale_layer(cls, layer: LinearLayer) -> LinearLayer:
+    def scale_layer(
+        cls, layer: LinearLayer, last=False, batchnorm=False, nonlinearity=None
+    ) -> LinearLayer:
         kwargs = deepcopy(layer.kwargs)
+        if nonlinearity:
+            kwargs["nonlinearity"] = nonlinearity
+
+        # TODO: Depends on scaling, the scaled layers could include different dimensionality
         kwargs["out_features"] = kwargs["in_features"]
-        return cls.create_layer(**kwargs, hook=False)
+        # if not last:
+        #     kwargs["out_features"] = kwargs["in_features"]
+        # If `last` set in_features to out_features
+        # if last:
+        #     kwargs["in_features"] = kwargs["out_features"]
+        return cls.create_layer(**kwargs, hook=False, batchnorm=batchnorm)
 
     @classmethod
     def hook_layer(cls, layer: Layer) -> Layer:

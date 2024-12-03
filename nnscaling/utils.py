@@ -1,15 +1,23 @@
 import json
 import os
 import random
+from enum import Enum
 
 import numpy as np
 import torch
 from jaxtyping import Int
-from torch import device
+from torch import device, nn
 from torch.utils.data import DataLoader, Dataset
 from torcheval.metrics import MulticlassAccuracy
 
 from nnscaling.models import BaseTorchModel
+
+
+class StringtoClassNonlinearity(Enum):
+    relu = nn.ReLU
+    leakyrelu = nn.LeakyReLU
+    sigmoid = nn.Sigmoid
+    gelu = nn.GELU
 
 
 def get_device() -> device:
@@ -41,7 +49,8 @@ def compute_model_accuracy(
     metric = MulticlassAccuracy()
     for i, batch in enumerate(dataloader):
         image, target = batch
-        output = model.forward(image)
+        # TODO: This is poor, in the case of a different network architecture, we don't want to flatten
+        output = model.forward(image.flatten(start_dim=1))
         metric.update(output, target.squeeze())
 
     return metric.compute()

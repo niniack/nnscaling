@@ -1,0 +1,27 @@
+seed: 21
+batch_size: 4_096
+num_epochs: 30
+
+learning_rate: 3e-2
+weight_decay: 0
+lambda_complexity: 0
+lambda_uniformity: 0
+out_features: 10
+betas: [0.9, 0.999]
+
+model_to_scale: "/home/nsa325/work/nnscaling/model_saves/mnist_model.safetensors"
+scale_location: 1
+num_scaled_layers: 10
+scale_nonlinearity: "relu"
+
+train_data: 
+    dataset_name: "MNISTDataset"
+    num_samples: 1
+    split: "train"
+    torch_transform: null
+    seed: 42
+    negative_label: False
+    
+save_name: "mnist_model"
+save_dir: "/home/nsa325/work/nnscaling/model_saves/scaling/"
+print_freq: 3

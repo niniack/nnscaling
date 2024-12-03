@@ -24,6 +24,7 @@ class DatasetConfig(BaseModel):
         "LotusRootDataset",
         "SunflowerDataset",
         "TorusDataset",
+        "MNISTDataset",
     ]
     num_samples: int
     split: str
@@ -346,24 +347,29 @@ class TorusDataset(Dataset):
         return "TorusDataset"
 
 
-class MNISTDataset:
-    """Simple wrapper around MNIST dataset"""
+class MNISTDataset(datasets.MNIST):
+    """Simple wrapper around the MNIST dataset with default configurations."""
 
     default_transform = transforms.Compose(
         [
-            transforms.ToTensor(),  # first, convert image to PyTorch tensor
-            transforms.Normalize((0.1307,), (0.3081,)),  # normalize inputs
+            transforms.ToTensor(),  # Scale to [0, 1]
+            transforms.Normalize((0.1307,), (0.3081,)),  # Normalize inputs
         ]
     )
 
     def __init__(
         self,
-        seed=42,  # Randomness seed
-        transform=default_transform,  # Torch transforms, uses default MNIST transform
-        root="/mnt/datasets/",  # Dataset location
-        train=True,  # Train or test dataset
+        config=None,
+        seed=42,
+        transform=None,  # Torch transforms, uses default MNIST transform if None
+        root="/scratch/nsa325/datasets/",  # Dataset location
     ):
-        self.data = datasets.MNIST(root=root, train=train, download=True, transform=transform).data
+        self.transform = transform or self.default_transform
+        train = True if config.split == "train" else False
+        super().__init__(root=root, train=train, download=True, transform=self.transform)
+        self.seed = seed
+        self.config = config
+        self.in_features = 784
 
     def name(self):
         return "MNISTDataset"

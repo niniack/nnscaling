@@ -12,20 +12,26 @@ from safetensors.torch import load_model
 from torch import Tensor
 
 from nnscaling.models import BaseTorchModel
-from nnscaling.utils import get_device, safetensors_metadata_parser
+from nnscaling.utils import StringtoClassNonlinearity, get_device, safetensors_metadata_parser
 
 
 class ScaledModel(nn.Module):
     """A model that inserts scaled layers into a base model and manages hooks for activation capture."""
 
-    def __init__(self, model: BaseTorchModel, index: Int, num_scaled: Int):
+    def __init__(
+        self, model: BaseTorchModel, index: Int, num_scaled: Int, batchnorm=True, nonlinearity=None
+    ):
         super().__init__()
 
         self._index = index  # Index at which the original model is split
         self._num_scaled = num_scaled  # Number of scaled layers to insert
         self.activations_dict = OrderedDict()  # Dictionary to store activations
         self.hooks = []  # List to store hook handles
-
+        nonlinearity = (
+            StringtoClassNonlinearity[nonlinearity].value
+            if isinstance(nonlinearity, str)
+            else nonlinearity
+        )
         # Validate index to ensure it's not at the start or end of the model
         if index == 0 or index == len(model.features):
             raise ValueError(
@@ -43,7 +49,49 @@ class ScaledModel(nn.Module):
 
         # Create scaled layers by applying the factory method `scale_layer`
         og_layer_to_scale = self._model.features[index]
-        new_layers = [model.factory.scale_layer(og_layer_to_scale) for _ in range(num_scaled)]
+
+        # TODO: The first chunk does scaling by inserting layers between existing ones
+        # The second chunk outlines how replacing the replaceable layer would happen
+        ######################################################################################################
+        ######################################################################################################
+        new_layers = []
+        for _ in range(num_scaled):
+            new_layers.append(
+                model.factory.scale_layer(
+                    og_layer_to_scale, batchnorm=batchnorm, nonlinearity=nonlinearity
+                )
+            )
+        ######################################################################################################
+        ######################################################################################################
+
+        ######################################################################################################
+        ######################################################################################################
+        # # First
+        # new_layers = []
+        # new_layers.append(
+        #     model.factory.scale_layer(
+        #         og_layer_to_scale, last=False, batchnorm=batchnorm, nonlinearity=nonlinearity
+        #     )
+        # )
+
+        # # Middle
+        # # TODO: `last` controls the shape of the layers, this is a poor naming convention and an
+        # # artifact. Setting `last=True`, at the moment, does nothing, but it used to make the layer not-square
+        # for _ in range(1, num_scaled - 1):
+        #     new_layers.append(
+        #         model.factory.scale_layer(
+        #             og_layer_to_scale, last=True, batchnorm=batchnorm, nonlinearity=nonlinearity
+        #         )
+        #     )
+
+        # # Last
+        # new_layers.append(
+        #     model.factory.scale_layer(
+        #         og_layer_to_scale, last=True, batchnorm=batchnorm, nonlinearity=nonlinearity
+        #     )
+        # )
+        ######################################################################################################
+        ######################################################################################################
         self.scaled_layers = nn.Sequential(*new_layers)  # Sequential container for scaled layers
 
         # Capture the replaceable layer at the index and split remaining layers as post-inserts
@@ -76,14 +124,18 @@ class ScaledModel(nn.Module):
     def forward_raw(self, x: Float[Tensor, "batch features"]) -> Tensor:
         """Forward pass through the original model"""
         self.activations_dict.clear()  # Clear previous activations
-        return self._model(x)  # Use the original model's forward method
+        x = self.pre_inserts(x)  # Pass input through pre-insert layers
+        ### Here we skip the scaled layers ###
+        x = self.replaceable(x)  # Pass through the replaceable layer
+        return self.post_inserts(x)  # Pass through post-insert layers
 
     def forward_scaled(self, x: Float[Tensor, "batch features"]) -> Tensor:
         """Forward pass through the scaled model"""
         self.activations_dict.clear()  # Clear previous activations
         x = self.pre_inserts(x)  # Pass input through pre-insert layers
         x = self.scaled_layers(x)  # Pass through scaled layers
-        x = self.replaceable(x)  # Pass through the replaceable layer
+        ### NOTE: Alternatively, here we skip the replaceable layer ###
+        x = self.replaceable(x)
         return self.post_inserts(x)  # Pass through post-insert layers
 
     def hook_model(self, pre: Bool = False, scaled: Bool = False, post: Bool = False) -> None:
@@ -122,21 +174,25 @@ class ScaledModel(nn.Module):
         for i, layer in enumerate(self.pre_inserts):
             if layer.is_hooked:  # Check if the layer is hooked
                 activations[f"pre_insert_{i}"] = (
-                    layer.forward_activations.detach() if detach else layer.forward_activations
+                    layer.forward_activations.detach()
+                    if detach and layer.forward_activations is not None
+                    else layer.forward_activations
                 )
 
         # Collect activations from scaled layers
         for i, layer in enumerate(self.scaled_layers):
             if layer.is_hooked:  # Check if the layer is hooked
                 activations[f"scaled_{i}"] = (
-                    layer.forward_activations.detach() if detach else layer.forward_activations
+                    layer.forward_activations.detach()
+                    if detach and layer.forward_activations is not None
+                    else layer.forward_activations
                 )
 
         # Collect activations from the replaceable layer
         if self.replaceable.is_hooked:  # Check if the layer is hooked
             activations["post_insert_0"] = (
                 self.replaceable.forward_activations.detach()
-                if detach
+                if detach and self.replaceable.forward_activations is not None
                 else self.replaceable.forward_activations
             )
 
@@ -155,8 +211,8 @@ class ScaledModel(nn.Module):
             model=model,
             index=literal_eval(metadata["layer_start"]),
             num_scaled=literal_eval(metadata["added_layers"]),
+            nonlinearity=metadata["scale_nonlinearity"],
         )
-
         # Load weights into the model using safetensors
         load_model(scaled_model, file_path, device=get_device())
 

@@ -2,26 +2,26 @@ seed: 21
 batch_size: 1_000
 num_epochs: 3_000
 
-learning_rate: 1e-2
+learning_rate: 2e-3
 weight_decay: 0
-lambda_complexity: 1e-2
+lambda_complexity: 0
 lambda_uniformity: 0
 out_features: 2
-betas: [0.9, 0.999]
+betas: [0.8, 0.8]
 
-model_to_scale: "/home/nsa325/work/nnscaling/model_saves/lotusroot_model.safetensors"
-scale_location: 3
+model_to_scale: "/home/nsa325/work/nnscaling/model_saves/yinyang_model.safetensors"
+scale_location: 1
 num_scaled_layers: 10
 scale_nonlinearity: "relu"
 
 train_data: 
     dataset_name: "LotusRootDataset"
-    num_samples: 5_000
+    num_samples: 2_000
     split: "train"
     torch_transform: null
     seed: 42
     negative_label: false
     
-save_name: "lotusroot_model"
+save_name: "yinyang_model"
 save_dir: "/home/nsa325/work/nnscaling/model_saves/scaling/"
-print_freq: 100
+print_freq: 500

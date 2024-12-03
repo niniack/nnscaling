@@ -81,13 +81,21 @@ class KoopmanWrapper(nn.Module):
 
         # Grab activations and rearrange
         scaled_model_activations = self._scaled_model.get_activations().copy()
+
+        # NOTE: If we change how we scale, then we have to pop certain components from the activations
+        # Alternatively, we can change arguments in `hook_model`
+        # # Remove last layer
+        # _, acts_to_predict = scaled_model_activations.popitem(last=True)
+        # _, acts_to_predict = scaled_model_activations.popitem(last=False)
+
+        # Stack activations and rearrange
         scaler_acts = torch.stack(list(scaled_model_activations.values())).detach()
         scaler_acts = einops.rearrange(
             scaler_acts, "iteration batch state -> batch state iteration"
         )
-        n_iterations = scaler_acts.shape[-1]
 
         # Run through DMD model
+        n_iterations = scaler_acts.shape[-1]
         valid_states = self._scaled_model.replaceable.out_features  # NOTE: improve this
         x_koopman = self.simulate(x0=scaler_acts, n_steps=n_iterations - self._n_delays)
         x_koopman = x_koopman[:, :valid_states, -1]
@@ -154,7 +162,6 @@ class TorchDelayEmbedder:
             )
         n_batch, n_states, n_iters = x.shape
 
-        # TODO: FIX THIS???
         # Size of each row
         unfold_size = n_iters - self._n_consumed_samples
         if unfold_size <= 0:
@@ -182,7 +189,7 @@ class TorchDelayEmbedder:
 
     def fit(self, x):
         """
-        Fit the model to measurement data.
+        Don't really worry about this for now. We never use it. Fit the model to measurement data.
         """
         if isinstance(x, np.ndarray):
             x = torch.from_numpy(x)

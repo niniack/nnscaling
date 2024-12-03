@@ -49,10 +49,12 @@ class LinearLayer(Layer):
         nonlinearity: nn.Module,
         bias: bool,
         hook: bool,
+        batchnorm: bool = False,
     ):
         super().__init__(nonlinearity, bias, hook)
 
         self.linear = nn.Linear(in_features=in_features, out_features=out_features, bias=bias)
+        self.batchnorm_layer = nn.BatchNorm1d(out_features) if batchnorm else None
         self.activation_layer = nonlinearity() if nonlinearity is not None else None
 
         self._kwargs = OrderedDict(
@@ -104,6 +106,8 @@ class LinearLayer(Layer):
     def forward(self, x):
         self._forward_activations = -1
         x = self.linear(x)
+        if self.batchnorm_layer:
+            x = self.batchnorm_layer(x)
         if self.activation_layer:
             x = self.activation_layer(x)
         return x
