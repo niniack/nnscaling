@@ -26,6 +26,7 @@ class TrajectoryEngine:
         # making batch_size huge, which is poor practice
         self.train_loader = create_data_loader(self.dataset, batch_size=10_000, global_seed=42)
         self.scaled_model = scaled_model
+        self.scaled_model.eval()
 
     @torch.no_grad()
     def _run_forward(self):
@@ -36,12 +37,12 @@ class TrajectoryEngine:
 
             # Hook and forward pass on original model
             self.scaled_model.hook_model(pre=True, scaled=False, post=True)
-            _ = self.scaled_model.forward_raw(inputs.flatten(start_dim=1))
+            _ = self.scaled_model.forward_raw(inputs)
             raw_model_activations = self.scaled_model.get_activations().copy()
 
             # Hook and forward pass on scaled model
             self.scaled_model.hook_model(pre=True, scaled=True, post=True)
-            _ = self.scaled_model.forward_scaled(inputs.flatten(start_dim=1))
+            _ = self.scaled_model.forward_scaled(inputs)
             scaled_model_activations = self.scaled_model.get_activations().copy()
 
         return raw_model_activations, scaled_model_activations

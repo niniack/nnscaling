@@ -64,6 +64,97 @@ def train_one_epoch(
     optimizer: torch.optim.Optimizer,
     config: Config,
 ) -> float:
+    # Helper function to filter weight matrices (exclude biases)
+    def get_weight_matrices(params):
+        return [p for p in params if len(p.shape) > 1]  # Weights typically have >1 dimension
+
+    def compute_norm_loss(activation_dict, subsample_size=80):
+        def center_gram(X):
+            """Center a Gram matrix."""
+            n = X.size(0)
+            H = torch.eye(n, device=X.device) - (1 / n) * torch.ones((n, n), device=X.device)
+            return H @ X @ H
+
+        def expected_trace(X):
+            """Estimate the expected trace for finite samples."""
+            return torch.trace(X) / X.size(0)
+
+        def debiased_cka(A, B):
+            """Compute the debiased CKA similarity between two activation matrices."""
+            # Compute centered Gram matrices
+            K_A = center_gram(
+                torch.einsum("ij,kj->ik", A, A)
+            )  # Using einsum for efficient computation
+            K_B = center_gram(torch.einsum("ij,kj->ik", B, B))
+
+            # Compute traces
+            trace_AB = torch.trace(K_A @ K_B)
+            trace_AA = torch.trace(K_A @ K_A)
+            trace_BB = torch.trace(K_B @ K_B)
+
+            # Estimate expected traces (bias terms)
+            expected_AB = expected_trace(K_A @ K_B)
+            expected_AA = expected_trace(K_A @ K_A)
+            expected_BB = expected_trace(K_B @ K_B)
+
+            # Debiased CKA similarity
+            epsilon = 1e-10  # For numerical stability
+            numerator = trace_AB - expected_AB
+            denominator = torch.sqrt((trace_AA - expected_AA) * (trace_BB - expected_BB)) + epsilon
+
+            return numerator / denominator
+
+        def subsample_indices(matrix, size):
+            n = matrix.size(0)
+            if n > size:
+                return torch.randperm(n, device=matrix.device)[:size]
+            return torch.arange(n, device=matrix.device)
+
+        # Preprocess activations: zero-center and subsample each activation matrix
+        activations = [
+            act - act.mean(dim=0, keepdim=True) for act in list(activation_dict.values())[:-1]
+        ]
+
+        # Compute subsample indices once
+        subsample_idx = subsample_indices(activations[0], subsample_size)
+
+        # Subsample all activations using the same indices
+        activations = [act[subsample_idx] for act in activations]
+
+        cka_losses = []
+        for i in range(1, len(activations)):
+            prev_act = activations[i - 1]
+            curr_act = activations[i]
+
+            # Compute debiased CKA similarity between consecutive activations
+            # with torch.no_grad():
+            similarity = debiased_cka(prev_act, curr_act)
+
+            # Encourage similarity to be high
+            cka_loss = 1 - similarity  # Higher similarity reduces the loss
+            cka_losses.append(cka_loss)
+
+        # Combine all CKA losses into a single regularization term
+        regularization_loss = torch.sum(torch.stack(cka_losses))
+
+        return regularization_loss
+
+    def compute_uniformity_loss(trainable_params):
+        # Filter weight matrices only
+        trainable_weights = get_weight_matrices(trainable_params)
+
+        # Compute averaged singular values for trainable weights (across first dimension)
+        trainable_singular_values = [torch.linalg.svdvals(p) for p in trainable_weights]
+        k = len(trainable_singular_values[0])
+        for tsv in trainable_singular_values:
+            k = min(k, len(tsv))
+        trainable_singular_values = torch.stack(
+            [values[:k] for values in trainable_singular_values]
+        )
+
+        # Compute variance of singular values
+        return torch.mean(torch.var(trainable_singular_values, dim=0))
+
     model.train()
     model.to(device)
     criterion = nn.MSELoss()
@@ -98,8 +189,9 @@ def train_one_epoch(
         loss = criterion(output_activation, target_activation)
 
         # Compute regularization terms for weight matrices only
-        norm_loss = torch.tensor(-1.0)
-        uniformity_loss = torch.tensor(-1.0)
+        trainable_params = [p for p in model.parameters() if p.requires_grad]
+        norm_loss = compute_norm_loss(model.get_activations(detach=False))
+        uniformity_loss = compute_uniformity_loss(trainable_params)
 
         # Combine total loss
         loss += config.lambda_complexity * norm_loss + config.lambda_uniformity * uniformity_loss
@@ -169,7 +261,6 @@ def main(config_path_or_obj: Optional[Path | str | Config] = None):
         file_path=config.model_to_scale,
         in_features=dataset.in_features,
     )
-    unscaled_model.eval()
     model = ScaledModel(
         model=unscaled_model,
         index=config.scale_location,

@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 import einops
 import numpy as np
 import torch
+import torch.nn.functional as F
 from jaxtyping import Float, Int
 from torch import Tensor, nn
 
@@ -77,6 +78,7 @@ class KoopmanWrapper(nn.Module):
         self._scaled_model.hook_model(pre=True, scaled=True, post=False)
 
         # Forward on scaled
+        self._scaled_model.eval()
         _ = self._scaled_model.forward_scaled(x)
 
         # Grab activations and rearrange
@@ -84,10 +86,9 @@ class KoopmanWrapper(nn.Module):
 
         # NOTE: If we change how we scale, then we have to pop certain components from the activations
         # Alternatively, we can change arguments in `hook_model`
-        # # Remove last layer
-        # _, acts_to_predict = scaled_model_activations.popitem(last=True)
-        # _, acts_to_predict = scaled_model_activations.popitem(last=False)
-
+        # Remove last layer
+        if self._scaled_model.scale_style == "replace":
+            _, acts_to_predict = scaled_model_activations.popitem(last=True)
         # Stack activations and rearrange
         scaler_acts = torch.stack(list(scaled_model_activations.values())).detach()
         scaler_acts = einops.rearrange(
@@ -96,9 +97,15 @@ class KoopmanWrapper(nn.Module):
 
         # Run through DMD model
         n_iterations = scaler_acts.shape[-1]
-        valid_states = self._scaled_model.replaceable.out_features  # NOTE: improve this
         x_koopman = self.simulate(x0=scaler_acts, n_steps=n_iterations - self._n_delays)
+        valid_states = (
+            self._scaled_model.scalable_layer.out_features
+        )  # TODO: improve this, it feels a bit brittle
         x_koopman = x_koopman[:, :valid_states, -1]
+
+        # NOTE: This is the baseline! It must beat the original linear + batchnorm
+        # x_koopman = self._scaled_model.scaling_layers[-1].linear(scaler_acts[:, :, -1])
+        # x_koopman = self._scaled_model.scaling_layers[-1].batchnorm_layer(x_koopman)
 
         # Run through post inserts
         scaled_koopman_out = self._scaled_model.post_inserts(x_koopman)

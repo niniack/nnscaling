@@ -37,6 +37,10 @@ giotto-tda = "^0.6.2"
 giotto-ph = "^0.2.4"
 ripser = "^0.6.10"
 scikit-dimension = "^0.3.4"
+datasets = "^3.2.0"
+transformers = "^4.47.0"
+repsim = {git = "https://github.com/wrongu/repsim"}
+timm = "^1.0.12"
 
 [[tool.poetry.source]]
 name = "pytorch"

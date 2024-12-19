@@ -1,20 +1,20 @@
 seed: 0
 batch_size: 4_096
-num_epochs: 30
+num_epochs: 60
 
-learning_rate: 1e-2
-weight_decay: 0
+learning_rate: 5e-2
+weight_decay: 1e-4
 out_features: 10
 hidden_neurons: [128, 64, 32, 16]
 
 train_data: 
-    dataset_name: "MNISTDataset"
+    dataset_name: "FashionMNISTDataset"
     num_samples: 1
     split: "train"
     torch_transform: null
     seed: 42
     negative_label: False
 
-save_name: "mnist_model"
+save_name: "fashion_model"
 save_dir: "/home/nsa325/work/nnscaling/model_saves/"
 print_freq: 1

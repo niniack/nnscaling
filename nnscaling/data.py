@@ -25,6 +25,8 @@ class DatasetConfig(BaseModel):
         "SunflowerDataset",
         "TorusDataset",
         "MNISTDataset",
+        "CIFAR10Dataset",
+        "FashionMNISTDataset",
     ]
     num_samples: int
     split: str
@@ -78,6 +80,7 @@ class BaseYinYangDataset(Dataset):
             self.class_names = ["yin", "yang", "dot"]
         self.features = []
         self.labels = []
+        self.in_features = 2
 
         self.binary = binary
         if not binary and not dots:
@@ -237,6 +240,7 @@ class LotusRootDataset(Dataset):
 
         self.features = torch.FloatTensor(np.asarray(self.features))
         self.labels = torch.IntTensor(self.labels).unsqueeze(1)
+        self.in_features = 2
 
     def sample_point(self):
         found_sample = False
@@ -289,6 +293,7 @@ class TorusDataset(Dataset):
         self.rng = np.random.RandomState(config.seed)
         self.features = []
         self.labels = []
+        self.in_features = 3
 
         # Split samples evenly among all toruses
         num_samples_per_torus = self.num_samples // (2 * self.num_pairs)
@@ -370,6 +375,68 @@ class MNISTDataset(datasets.MNIST):
         self.seed = seed
         self.config = config
         self.in_features = 784
+        self.labels = self.targets
 
     def name(self):
         return "MNISTDataset"
+
+
+class FashionMNISTDataset(datasets.FashionMNIST):
+    """Simple wrapper around the FashionMNIST dataset with default configurations."""
+
+    default_transform = transforms.Compose(
+        [
+            transforms.ToTensor(),  # Scale to [0, 1]
+            transforms.Normalize((0.5,), (0.5,)),  # Normalize inputs to [-1, 1] range
+        ]
+    )
+
+    def __init__(
+        self,
+        config=None,
+        seed=42,
+        transform=None,  # Torch transforms, uses default FashionMNIST transform if None
+        root="/scratch/nsa325/datasets/",  # Dataset location
+    ):
+        self.transform = transform or self.default_transform
+        train = True if config.split == "train" else False
+        super().__init__(root=root, train=train, download=True, transform=self.transform)
+        self.seed = seed
+        self.config = config
+        self.in_features = 784  # FashionMNIST images are 28x28
+        self.labels = self.targets
+
+    def name(self):
+        return "FashionMNISTDataset"
+
+
+class CIFAR10Dataset(datasets.CIFAR10):
+    """Simple wrapper around the CIFAR-10 dataset with default configurations."""
+
+    default_transform = transforms.Compose(
+        [
+            transforms.ToTensor(),  # Convert images to tensors and scale to [0, 1]
+            transforms.Normalize(
+                mean=(0.4914, 0.4822, 0.4465),  # Mean for CIFAR-10
+                std=(0.2470, 0.2435, 0.2616),  # Standard deviation for CIFAR-10
+            ),  # Normalize inputs
+        ]
+    )
+
+    def __init__(
+        self,
+        config=None,
+        seed=42,
+        transform=None,  # Torch transforms, uses default CIFAR-10 transform if None
+        root="/scratch/nsa325/datasets/",  # Dataset location
+    ):
+        self.transform = transform or self.default_transform
+        train = True if config.split == "train" else False
+        super().__init__(root=root, train=train, download=True, transform=self.transform)
+        self.seed = seed
+        self.config = config
+        self.in_features = 3072  # CIFAR-10 has 32x32x3 inputs
+        self.labels = self.targets
+
+    def name(self):
+        return "CIFAR10Dataset"

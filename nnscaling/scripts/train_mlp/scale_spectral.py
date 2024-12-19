@@ -1,7 +1,9 @@
 import os
+import pdb
 import sys
+from ast import literal_eval
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Optional
 
 import fire
 import torch
@@ -14,7 +16,7 @@ from pydantic import (
     PositiveFloat,
     PositiveInt,
 )
-from safetensors.torch import save_model
+from safetensors.torch import load_model, save_model
 from torch import nn, optim
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader
@@ -25,14 +27,9 @@ from nnscaling.data import (
     get_dataset_class,
 )
 from nnscaling.log import logger
-from nnscaling.models import MLP, ScaledModel
+from nnscaling.models import MLP, BaseTorchModel, ScaledModel
 from nnscaling.scripts.common import load_config
-from nnscaling.utils import (
-    StringtoClassNonlinearity,
-    get_device,
-    safetensors_metadata_parser,
-    set_seed,
-)
+from nnscaling.utils import get_device, safetensors_metadata_parser, set_seed
 
 
 class Config(BaseModel):
@@ -51,8 +48,6 @@ class Config(BaseModel):
     model_to_scale: str
     scale_location: PositiveInt
     num_scaled_layers: PositiveInt
-    scale_nonlinearity: str
-    scale_style: Literal["replace", "prepend"]
     betas: list[PositiveFloat] | None = None
     num_epochs: PositiveInt | None = None
 
@@ -62,12 +57,84 @@ def train_one_epoch(
     train_loader: DataLoader,
     device: torch.device,
     optimizer: torch.optim.Optimizer,
-    config: Config,
+    lambda_complexity: float = 1e-1,
+    lambda_uniformity: float = 1e-5,
 ) -> float:
+    # Helper function to filter weight matrices (exclude biases)
+    def get_weight_matrices(params):
+        return [p for p in params if len(p.shape) > 1]  # Weights typically have >1 dimension
+
+    def compute_norm_loss(trainable_params, replaceable_params):
+        # Filter weight matrices only
+        trainable_weights = get_weight_matrices(trainable_params)
+        replaceable_weights = get_weight_matrices(replaceable_params)
+
+        # Compute singular values for trainable weights (across first dimension)
+        trainable_singular_values = [torch.linalg.svdvals(p) for p in trainable_weights]
+        k = len(trainable_singular_values[0])
+        for tsv in trainable_singular_values:
+            k = min(k, len(tsv))
+
+        ##################################################
+        # SWITCH BETWEEN MEAN AND SUM
+        ##################################################
+        # trainable_avg_singular_values = torch.mean(
+        #     torch.stack([values[:k] for values in trainable_singular_values]), dim=0
+        # )
+        ##################################################
+        trainable_avg_singular_values = torch.sum(
+            torch.stack([values[:k] for values in trainable_singular_values]), dim=0
+        )
+        ##################################################
+
+        # Compute singular values for replaceable weights (frozen)
+        frozen_singular_values = torch.linalg.svdvals(replaceable_weights[-1])
+
+        # Compute spectral loss (L2 distance between spectra)
+        return torch.sum((trainable_avg_singular_values - frozen_singular_values).pow(2))
+
+    def compute_uniformity_loss(trainable_params):
+        # Filter weight matrices only
+        trainable_weights = get_weight_matrices(trainable_params)
+
+        # Compute averaged singular values for trainable weights (across first dimension)
+        trainable_singular_values = [torch.linalg.svdvals(p) for p in trainable_weights]
+        k = len(trainable_singular_values[0])
+        for tsv in trainable_singular_values:
+            k = min(k, len(tsv))
+        trainable_singular_values = torch.stack(
+            [values[:k] for values in trainable_singular_values]
+        )
+
+        # Compute variance of singular values
+        return torch.mean(torch.var(trainable_singular_values, dim=0))
+
+    # def compute_uniformity_loss(trainable_params):
+    #     # Get gradients of the trainable parameters (assumes gradients are already computed via backward pass)
+    #     weight_matrices = get_weight_matrices(trainable_params)
+
+    #     gradient_norms = []
+    #     for p in weight_matrices:
+    #         if p.grad is not None:
+    #             grad_norm = torch.norm(p.grad)
+    #             gradient_norms.append(grad_norm)
+
+    #     if len(gradient_norms) > 0:
+    #         gradient_norms = torch.stack(gradient_norms)
+    #     else:
+    #         return torch.tensor(0.0, requires_grad=True)
+
+    #     # Compute the mean of the gradient norms
+    #     mean_gradient_norm = torch.mean(gradient_norms)
+
+    #     # Penalize deviations from the mean gradient norm
+    #     loss = torch.sum((gradient_norms - mean_gradient_norm).pow(2))
+    #     return loss
+
     model.train()
     model.to(device)
     criterion = nn.MSELoss()
-    scalable_params = list(model.scalable_layer.parameters())
+    replaceable_params = list(model.replaceable.parameters())
 
     loss_epoch = 0
     norm_loss_epoch = 0
@@ -78,7 +145,7 @@ def train_one_epoch(
         label = label.squeeze()
 
         optimizer.zero_grad()
-        model.hook_model(pre=True, scaled=True, post=True)
+        model.hook_model(scaled=True, post=True)
 
         # Forward pass for target and output activations
         with torch.no_grad():
@@ -86,23 +153,18 @@ def train_one_epoch(
             target_activation = model.get_activations()["post_insert_0"]
 
         _ = model.forward_scaled(input)
-
-        if config.scale_style == "replace":
-            output_activation = model.get_activations(detach=False)[
-                f"scaled_{config.num_scaled_layers-1}"
-            ]
-        elif config.scale_style == "prepend":
-            output_activation = model.get_activations(detach=False)["post_insert_0"]
+        output_activation = model.get_activations(detach=False)["scaled_19"]
 
         # Compute the primary loss
         loss = criterion(output_activation, target_activation)
 
         # Compute regularization terms for weight matrices only
-        norm_loss = torch.tensor(-1.0)
-        uniformity_loss = torch.tensor(-1.0)
+        trainable_params = [p for p in model.parameters() if p.requires_grad]
+        norm_loss = compute_norm_loss(trainable_params, replaceable_params)
+        uniformity_loss = compute_uniformity_loss(trainable_params)
 
         # Combine total loss
-        loss += config.lambda_complexity * norm_loss + config.lambda_uniformity * uniformity_loss
+        loss += lambda_complexity * norm_loss + lambda_uniformity * uniformity_loss
 
         loss.backward()
         optimizer.step()
@@ -143,8 +205,6 @@ def main(config_path_or_obj: Optional[Path | str | Config] = None):
         del wandb_config_dict["beta_one"], wandb_config_dict["beta_two"]
 
     # Load config
-    logger.info(wandb_config_dict)
-    logger.info(config_path_or_obj)
     config = load_config(
         config_path_or_obj or wandb_config_dict,
         config_model=Config,
@@ -165,18 +225,11 @@ def main(config_path_or_obj: Optional[Path | str | Config] = None):
 
     # Load model
     metadata = safetensors_metadata_parser(file_path=config.model_to_scale)
-    unscaled_model = MLP.load_model(
-        file_path=config.model_to_scale,
-        in_features=dataset.in_features,
-    )
-    unscaled_model.eval()
+    unscaled_model = MLP.load_model(config.model_to_scale, dataset.features.shape[-1])
     model = ScaledModel(
         model=unscaled_model,
         index=config.scale_location,
-        nonlinearity=StringtoClassNonlinearity[config.scale_nonlinearity].value,
-        scale_style=config.scale_style,
         num_scaled=config.num_scaled_layers,
-        batchnorm=True,
     )
     model.summary()
     model.to(device).train()
@@ -185,7 +238,7 @@ def main(config_path_or_obj: Optional[Path | str | Config] = None):
     assert len(all_param_names) > 0, "No trainable parameters found."
     logger.info(f"Trainable layers: {len(all_param_names)}")
 
-    # Define optimiser and scheduler
+    # Define optimiser
     optimizer = optim.AdamW(
         params=model.parameters(),
         lr=config.learning_rate,
@@ -204,7 +257,8 @@ def main(config_path_or_obj: Optional[Path | str | Config] = None):
             train_loader=train_loader,
             device=device,
             optimizer=optimizer,
-            config=config,
+            lambda_complexity=config.lambda_complexity,
+            lambda_uniformity=config.lambda_uniformity,
         )
 
         scheduler.step(losses["epoch_loss"])
@@ -234,8 +288,6 @@ def main(config_path_or_obj: Optional[Path | str | Config] = None):
             "dataset": dataset.name(),
             "out_features": str(config.out_features),
             "nonlinearity": str(metadata["nonlinearity"]),
-            "scale_style": str(config.scale_style),
-            "scale_nonlinearity": str(config.scale_nonlinearity),
             "added_layers": str(config.num_scaled_layers),
             "layer_start": str(config.scale_location),
         }

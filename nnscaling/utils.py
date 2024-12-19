@@ -4,13 +4,12 @@ import random
 from enum import Enum
 
 import numpy as np
+import plotly.express as px
 import torch
 from jaxtyping import Int
 from torch import device, nn
 from torch.utils.data import DataLoader, Dataset
 from torcheval.metrics import MulticlassAccuracy
-
-from nnscaling.models import BaseTorchModel
 
 
 class StringtoClassNonlinearity(Enum):
@@ -18,6 +17,7 @@ class StringtoClassNonlinearity(Enum):
     leakyrelu = nn.LeakyReLU
     sigmoid = nn.Sigmoid
     gelu = nn.GELU
+    tanh = nn.Tanh
 
 
 def get_device() -> device:
@@ -41,16 +41,15 @@ def set_seed(seed: int | None) -> None:
 
 
 def compute_model_accuracy(
-    model: BaseTorchModel,  # Model
+    model: nn.Module,  # Model
     dataset: Dataset,  # Dataset
     batch_size: Int = 256,
 ):
     dataloader = DataLoader(dataset, batch_size=batch_size)
     metric = MulticlassAccuracy()
     for i, batch in enumerate(dataloader):
-        image, target = batch
-        # TODO: This is poor, in the case of a different network architecture, we don't want to flatten
-        output = model.forward(image.flatten(start_dim=1))
+        input, target = batch
+        output = model.forward(input)
         metric.update(output, target.squeeze())
 
     return metric.compute()

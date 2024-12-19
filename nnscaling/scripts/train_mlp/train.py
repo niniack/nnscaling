@@ -60,8 +60,7 @@ def train_one_epoch(
         label = label.squeeze()
 
         optimizer.zero_grad()
-        # TODO: bad practice
-        output = model(input.flatten(start_dim=1))
+        output = model(input)
 
         loss = criterion(output, label.long())
         loss.backward()

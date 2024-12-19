@@ -3,7 +3,6 @@ __all__ = ["MLP"]
 
 from ast import literal_eval
 from collections import OrderedDict
-from enum import Enum
 from pathlib import Path
 
 import torch.nn as nn
@@ -51,6 +50,7 @@ class MLP(BaseTorchModel):
                 in_features=full_config[i],
                 out_features=full_config[i + 1],
                 nonlinearity=nonlinearity if not i == len(full_config) - 2 else None,
+                batchnorm=True,
                 bias=bias,
                 hook=False,
             )

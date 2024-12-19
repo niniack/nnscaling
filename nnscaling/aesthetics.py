@@ -65,7 +65,8 @@ plt.rcParams["grid.color"] = "gray"  # Customize grid color
 plt.rcParams["savefig.dpi"] = 300  # High resolution for saved figures
 
 # Matrix printing
+matrepr.params.max_rows = 30
 matrepr.params.max_cols = 30
 matrepr.params.floatfmt = ".4f"
-# matrepr.params.num_after_dots = 3
+matrepr.params.num_after_dots = 5
 # matrepr.params.precision = 3
